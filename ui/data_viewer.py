@@ -136,6 +136,8 @@ class DataViewer(QWidget):
     view_mode_changed = pyqtSignal(str)
     data_copied = pyqtSignal()
     data_changed = pyqtSignal()
+    value_saved = pyqtSignal(bytes, bytes)
+    key_deleted = pyqtSignal(bytes)
 
     class ViewMode:
         TEXT = "text"
@@ -149,6 +151,8 @@ class DataViewer(QWidget):
         self._current_key = b""
         self._current_value = b""
         self._current_mode = self.ViewMode.TEXT
+        self._read_only = True
+        self._is_editing = False
         self._setup_ui()
 
     def _setup_ui(self):
@@ -176,6 +180,20 @@ class DataViewer(QWidget):
         mode_layout.addWidget(self._mode_combo)
 
         mode_layout.addStretch()
+
+        self._edit_btn = QPushButton("Edit")
+        self._edit_btn.clicked.connect(self._on_edit)
+        mode_layout.addWidget(self._edit_btn)
+
+        self._save_btn = QPushButton("Save")
+        self._save_btn.clicked.connect(self._on_save)
+        self._save_btn.setVisible(False)
+        mode_layout.addWidget(self._save_btn)
+
+        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn.clicked.connect(self._on_cancel)
+        self._cancel_btn.setVisible(False)
+        mode_layout.addWidget(self._cancel_btn)
 
         self._copy_btn = QPushButton("Copy")
         self._copy_btn.clicked.connect(self._on_copy)
@@ -223,6 +241,98 @@ class DataViewer(QWidget):
         self._value_size_label.setText("Value Size: 0 B")
         self._content_edit.clear()
         self._status_label.setText("No data")
+        self._exit_edit_mode()
+
+    def set_read_only(self, read_only: bool) -> None:
+        """设置只读模式"""
+        self._read_only = read_only
+        self._edit_btn.setVisible(not read_only)
+        self._exit_edit_mode()
+
+    def _enter_edit_mode(self) -> None:
+        """进入编辑模式"""
+        self._is_editing = True
+        self._content_edit.setReadOnly(False)
+        self._edit_btn.setVisible(False)
+        self._save_btn.setVisible(True)
+        self._cancel_btn.setVisible(True)
+        self._mode_combo.setEnabled(False)
+        self._copy_btn.setEnabled(False)
+
+    def _exit_edit_mode(self) -> None:
+        """退出编辑模式"""
+        self._is_editing = False
+        self._content_edit.setReadOnly(True)
+        self._edit_btn.setVisible(not self._read_only)
+        self._save_btn.setVisible(False)
+        self._cancel_btn.setVisible(False)
+        self._mode_combo.setEnabled(True)
+        self._copy_btn.setEnabled(True)
+
+    def _on_edit(self) -> None:
+        """编辑按钮点击"""
+        if not self._current_key:
+            return
+
+        self._enter_edit_mode()
+
+        if self._current_mode == self.ViewMode.JSON:
+            data, success = try_parse_json(self._current_value)
+            if success:
+                self._content_edit.setPlainText(json.dumps(data, indent=2, ensure_ascii=False))
+        elif self._current_mode == self.ViewMode.MSGPACK:
+            data, success = try_parse_msgpack(self._current_value)
+            if success:
+                self._content_edit.setPlainText(json.dumps(data, indent=2, ensure_ascii=False))
+        else:
+            text, _ = try_decode_text(self._current_value)
+            self._content_edit.setPlainText(text)
+
+        self._status_label.setText("Editing...")
+
+    def _on_save(self) -> None:
+        """保存按钮点击"""
+        if not self._current_key:
+            return
+
+        new_value = self._content_edit.toPlainText()
+
+        try:
+            if self._current_mode == self.ViewMode.JSON:
+                data = json.loads(new_value)
+                new_bytes = json.dumps(data, ensure_ascii=False).encode('utf-8')
+            elif self._current_mode == self.ViewMode.MSGPACK:
+                if not HAS_MSGPACK:
+                    QMessageBox.warning(self, "Error", "MsgPack module not installed")
+                    return
+                import msgpack
+                data = json.loads(new_value)
+                new_bytes = msgpack.packb(data)
+            elif self._current_mode == self.ViewMode.HEX:
+                hex_str = new_value.replace(' ', '').replace('\n', '').replace('\r', '')
+                new_bytes = bytes.fromhex(hex_str)
+            else:
+                new_bytes = new_value.encode('utf-8')
+
+            self._current_value = new_bytes
+            self.value_saved.emit(self._current_key, new_bytes)
+            self._exit_edit_mode()
+            self._update_content()
+            self._value_size_label.setText(f"Value Size: {format_size(len(new_bytes))}")
+            self._status_label.setText("Value saved")
+
+        except json.JSONDecodeError as e:
+            QMessageBox.warning(self, "Invalid JSON", f"Failed to parse JSON:\n{e}")
+        except ValueError as e:
+            QMessageBox.warning(self, "Invalid Hex", f"Failed to parse hex:\n{e}")
+        except Exception as e:
+            QMessageBox.warning(self, "Save Error", f"Failed to save:\n{e}")
+
+    def _on_cancel(self) -> None:
+        """取消按钮点击"""
+        self._exit_edit_mode()
+        self._update_content()
+        self._status_label.setText("Edit cancelled")
 
     def _update_content(self) -> None:
         """更新内容显示"""

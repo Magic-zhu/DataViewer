@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMenu,
     QDockWidget,
+    QCheckBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
@@ -45,6 +46,7 @@ class MainWindow(QMainWindow):
         self._adapter: Optional[LMDBAdapter] = None
         self._db_path: str = ""
         self._history = DatabaseHistory()
+        self._read_only = True
 
         self._setup_ui()
         self._setup_menu()
@@ -98,6 +100,10 @@ class MainWindow(QMainWindow):
         open_action.setShortcut(QKeySequence.StandardKey.Open)
         open_action.triggered.connect(self._on_open_database)
         file_menu.addAction(open_action)
+
+        open_rw_action = QAction("Open &Read-Write...", self)
+        open_rw_action.triggered.connect(self._on_open_database_readwrite)
+        file_menu.addAction(open_rw_action)
 
         # 最近打开
         self._recent_menu = file_menu.addMenu("Recent")
@@ -216,6 +222,8 @@ class MainWindow(QMainWindow):
         self._search_panel.search_requested.connect(self._on_search)
         self._search_panel.clear_requested.connect(self._on_clear_search)
         self._database_view.item_selected.connect(self._on_item_selected)
+        self._database_view.item_deleted.connect(self._on_delete_item)
+        self._data_viewer.value_saved.connect(self._on_value_saved)
 
     def _update_history_menu(self) -> None:
         """更新历史记录菜单"""
@@ -230,7 +238,7 @@ class MainWindow(QMainWindow):
             for entry in recent:
                 action = QAction(entry.name, self)
                 action.setToolTip(entry.path)
-                action.triggered.connect(lambda checked=entry.path: self._open_database_path(entry.path))
+                action.triggered.connect(lambda checked, p=entry.path: self._open_database_path(p))
                 self._recent_menu.addAction(action)
 
     def _on_open_database(self) -> None:
@@ -245,12 +253,13 @@ class MainWindow(QMainWindow):
         if path:
             self._open_database_path(path)
 
-    def _open_database_path(self, path: str) -> None:
+    def _open_database_path(self, path: str, read_only: bool = True) -> None:
         """打开指定路径的数据库"""
         try:
             self._adapter = LMDBAdapter()
-            self._adapter.connect(path, read_only=True)
+            self._adapter.connect(path, read_only=read_only)
             self._db_path = path
+            self._read_only = read_only
 
             # 添加到历史记录
             self._history.add(path)
@@ -263,11 +272,15 @@ class MainWindow(QMainWindow):
             stats = self._adapter.get_stats()
             self._stats_panel.set_stats(stats)
 
+            # 设置数据查看器的只读模式
+            self._data_viewer.set_read_only(read_only)
+
             # 更新 UI 状态
             self._update_ui_state(True)
 
             self.database_opened.emit(path)
-            self._status_label.setText(f"Opened: {path}")
+            mode = "read-only" if read_only else "read-write"
+            self._status_label.setText(f"Opened ({mode}): {path}")
 
         except LMDBError as e:
             QMessageBox.critical(self, "Error", f"Failed to open database:\n{e}")
@@ -279,6 +292,7 @@ class MainWindow(QMainWindow):
             self._adapter = None
 
         self._db_path = ""
+        self._read_only = True
         self._database_view.clear()
         self._data_viewer.clear()
         self._stats_panel.clear()
@@ -286,6 +300,66 @@ class MainWindow(QMainWindow):
         self._update_ui_state(False)
         self.database_closed.emit()
         self._status_label.setText("No database opened")
+
+    def _on_open_database_readwrite(self) -> None:
+        """以读写模式打开数据库"""
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Open LMDB Database (Read-Write Mode)",
+            "",
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        if path:
+            reply = QMessageBox.warning(
+                self,
+                "Read-Write Mode",
+                "Opening database in read-write mode allows modifications.\n\n"
+                "This may cause data loss if used incorrectly.\n\n"
+                "Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                self._open_database_path(path, read_only=False)
+
+    def _on_value_saved(self, key: bytes, value: bytes) -> None:
+        """保存值"""
+        if not self._adapter:
+            return
+
+        try:
+            self._adapter.set_value(key, value)
+            self._status_label.setText("Value saved successfully")
+            self._load_data()
+        except LMDBError as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save value:\n{e}")
+
+    def _on_delete_item(self, key: bytes) -> None:
+        """删除项"""
+        if not self._adapter:
+            return
+
+        try:
+            key_text = key.decode('utf-8', errors='replace')
+        except Exception:
+            key_text = key.hex()
+
+        reply = QMessageBox.question(
+            self,
+            "Delete Key",
+            f"Are you sure you want to delete this key?\n\n{key_text}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                self._adapter.delete_value(key)
+                self._data_viewer.clear()
+                self._status_label.setText("Key deleted")
+                self._load_data()
+            except LMDBError as e:
+                QMessageBox.critical(self, "Delete Error", f"Failed to delete key:\n{e}")
 
     def _load_data(self) -> None:
         """加载数据"""

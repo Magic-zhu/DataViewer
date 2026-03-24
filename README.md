@@ -1,6 +1,7 @@
 # DataViewer
 
 A cross-platform database viewer application for viewing and managing database contents. Initially supports LMDB (Lightning Memory-Mapped Database).
+
 ![example](example.png)
 
 ## Features
@@ -107,38 +108,6 @@ Switch between view modes in the detail panel:
 
 ## Development
 
-### Project Structure
-
-```
-DataViewer/
-├── main.py              # Application entry point
-├── build.py             # Build script
-├── requirements.txt     # Dependencies
-├── dataviewer.spec      # PyInstaller spec file
-├── core/                # Core database abstraction
-│   ├── base.py          # Database adapter interface
-│   ├── lmdb_adapter.py  # LMDB implementation
-│   └── utils.py         # Utility functions
-├── ui/                  # User interface
-│   ├── main_window.py   # Main application window
-│   ├── database_view.py # Table view widget
-│   ├── data_viewer.py   # Data detail viewer
-│   ├── search_panel.py  # Search panel
-│   ├── stats_panel.py   # Statistics panel
-│   └── styles.py        # Dark theme stylesheets
-├── models/              # Data models
-│   └── database_model.py # Qt table model
-├── utils/               # Utility modules
-│   └── export.py        # Data export functionality
-├── config/              # Configuration
-│   └── history.py       # Database history management
-└── tests/               # Test suite
-    ├── test_base.py
-    ├── test_lmdb_adapter.py
-    ├── test_utils.py
-    └── ...
-```
-
 ### Running Tests
 
 ```bash
@@ -184,15 +153,11 @@ MIT License
 
 ## Roadmap
 
-- [ ] Phase 3: Edit functionality (read-write mode, value editor)
-- [ ] Phase 4: Data visualization, backup/restore
-- [ ] Support for SQLite, LevelDB, RocksDB
-- [ ] Plugin system for custom data formats
-- [ ] Dark/Light theme switching
+- [X] : Edit functionality (read-write mode, value editor)
 
 ## Changelog
 
-### v0.1.0 (Current)
+### v0.1.1 (Current)
 - Basic LMDB support
 - Key-value browsing with pagination
 - Multiple view modes (Text, Hex, JSON, MsgPack)

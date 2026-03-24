@@ -33,6 +33,7 @@ class DatabaseView(QWidget):
 
     item_selected = pyqtSignal(object)
     item_double_clicked = pyqtSignal(object)
+    item_deleted = pyqtSignal(bytes)
     refresh_requested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -58,7 +59,7 @@ class DatabaseView(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.setSortingEnabled(True)
-        self._table.setAlternatingRowColors(True)
+        self._table.setAlternatingRowColors(False)
 
         # 设置列宽
         self._table.setColumnWidth(0, 200)
@@ -151,6 +152,11 @@ class DatabaseView(QWidget):
         copy_value_action = menu.addAction("Copy Value")
         copy_value_action.triggered.connect(lambda: self._copy_value(item))
 
+        menu.addSeparator()
+
+        delete_action = menu.addAction("Delete Key")
+        delete_action.triggered.connect(lambda: self._delete_item(item))
+
         menu.exec(self._table.viewport().mapToGlobal(pos))
 
     def _copy_key(self, item: KeyValueItem) -> None:
@@ -170,6 +176,10 @@ class DatabaseView(QWidget):
         except UnicodeDecodeError:
             text = item.value.hex()
         clipboard.setText(text)
+
+    def _delete_item(self, item: KeyValueItem) -> None:
+        """删除项"""
+        self.item_deleted.emit(item.key)
 
     def _on_prev_page(self) -> None:
         """上一页"""

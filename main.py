@@ -15,7 +15,7 @@ def main():
     """Main entry point"""
     app = QApplication(sys.argv)
     app.setApplicationName("DataViewer")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion("0.1.1")
     app.setOrganizationName("DataViewer")
 
     window = MainWindow()
